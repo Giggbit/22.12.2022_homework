@@ -1,121 +1,54 @@
-﻿#pragma comment (lib, "Ws2_32.lib")
-#include <Winsock2.h>
-#include <ws2tcpip.h>
-#include <iostream> 
+﻿#include <iostream>
 #include <string>
+#include <fstream>
+#include <windows.h>
+#include <sstream>
+#include <codecvt>
+#pragma comment(lib, "urlmon.lib")
 using namespace std;
+
+void FindPrintJSON(const string& sours, const string& find) {
+    int pos = -1;
+    while (true) {
+        pos = sours.find(find, pos + 1);
+        if (pos == string::npos) break;
+
+        for (auto i = sours.begin() + pos + find.length(); i != sours.end(); ++i) {
+            if (*i == ',') break;
+            cout << *i;
+        }
+        cout << endl;
+    }
+}
 
 int main()
 {
-    setlocale(0, "ru");
+    setlocale(LC_ALL, "Russian");
 
-    WSADATA wsaData;
-    WORD wVersionRequested = MAKEWORD(2, 2);
+    const char* FileName = "Privat24.txt";
 
-    int err = WSAStartup(wVersionRequested, &wsaData);
-    if (err != 0) {
-        cout << "WSAStartup failed with error: " << err << endl;
-        return 1;
+    const char* srcURL = "https://api.privatbank.ua/p24api/pubinfo?exchange&coursid=5";
+    if (S_OK == URLDownloadToFileA(NULL, srcURL, FileName, 0, NULL)) {
+        cout << "Saved to: " << FileName;
     }
 
-    char hostname[255] = "bank.gov.ua";   
+    ifstream file(FileName, ios::in);
+    file.imbue(locale(std::locale::empty(), new codecvt_utf8<wchar_t>));
 
-    addrinfo* result = NULL;
-    addrinfo hints;
-    ZeroMemory(&hints, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP;
+    if (file.is_open())
+    {
+        string buff;
 
-    int iResult = getaddrinfo(hostname, "http", &hints, &result);
-    if (iResult != 0) {
-        cout << "getaddrinfo failed with error: " << iResult << endl;
-        WSACleanup();
-        return 3;
-    }
+        while (!file.eof())
+        {
+            getline(file, buff, '\n');
 
-    SOCKET connectSocket = INVALID_SOCKET;
-    addrinfo* ptr = NULL;
-
-    //Пробуем присоединиться к полученному адресу
-    for (ptr = result; ptr != NULL; ptr = ptr->ai_next) {
-
-        //2. создание клиентского сокета
-        connectSocket = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
-        if (connectSocket == INVALID_SOCKET) {
-            printf("socket failed with error: %ld\n", WSAGetLastError());
-            WSACleanup();
-            return 1;
+            FindPrintJSON(buff, "ccy\":");
+            FindPrintJSON(buff, "base_ccy\":");
+            FindPrintJSON(buff, "buy\":");
+            FindPrintJSON(buff, "sale\":");
         }
 
-        //3. Соединяемся с сервером
-        iResult = connect(connectSocket, ptr->ai_addr, (int)ptr->ai_addrlen);
-        if (iResult == SOCKET_ERROR) {
-            closesocket(connectSocket);
-            connectSocket = INVALID_SOCKET;
-            continue;
-        }
-        break;
+        file.close();
     }
-
-    string uri = "/NBUStatService/v1/statdirectory/exchange?json";
-
-    string request = "GET " + uri + " HTTP/1.1\n";
-    request += "Host: " + string(hostname) + "\n";
-    request += "Accept: */*\n";
-    request += "Accept-Encoding: gzip, deflate, br\n";
-    request += "Connection: close\n";
-    request += "\n";
-
-    if (send(connectSocket, request.c_str(), request.length(), 0) == SOCKET_ERROR) {
-        cout << "send failed: " << WSAGetLastError() << endl;
-        closesocket(connectSocket);
-        WSACleanup();
-        return 5;
-    }
-
-    string response;
-    const size_t BUFFERSIZE = 1024;
-    char resBuf[BUFFERSIZE];
-    int respLength;
-
-    do {
-        respLength = recv(connectSocket, resBuf, BUFFERSIZE, 0);
-        if (respLength > 0) {
-
-            response += string(resBuf).substr(0, respLength);      
-        }
-        else {
-            cout << "recv failed: " << WSAGetLastError() << endl;
-            closesocket(connectSocket);
-            WSACleanup();
-            return 6;
-        }
-
-    } while (respLength == BUFFERSIZE);
-
-     cout << response << endl;
-
-    /*cout << "\n\n";
-    FindWord(response, "id");
-    FindWord(response, "name");
-    FindWord(response, "country");
-    FindWord(response, "lon");
-    FindWord(response, "lat");
-    FindWord(response, "temp_min");
-    FindWord(response, "temp_max");
-    FindWord(response, "sunset");
-    FindWord(response, "sunrise");*/
-
-    //отключает отправку и получение сообщений сокетом
-    iResult = shutdown(connectSocket, SD_BOTH);
-    if (iResult == SOCKET_ERROR) {
-        cout << "shutdown failed: " << WSAGetLastError() << endl;
-        closesocket(connectSocket);
-        WSACleanup();
-        return 7;
-    }
-
-    closesocket(connectSocket);
-    WSACleanup();
 }
